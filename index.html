@@ -125,9 +125,9 @@ svg.ic.fill{fill:currentColor}
 .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-weight:700;font-size:.74rem;background:var(--brand-soft);color:var(--brand)}
 .pill.good{background:var(--good-soft);color:var(--good)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.dark{background:var(--plum);color:var(--plum-ink)}.pill.sun{background:var(--sun);color:var(--plum)}
 .field{display:flex;flex-direction:column;gap:6px}.field label,.label{font-weight:700;font-size:.92rem}
-input[type=text],textarea{width:100%;min-height:50px;padding:12px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--card)}
+input[type=text],input[type=email],input[type=password],textarea{width:100%;min-height:50px;padding:12px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--card)}
 textarea{resize:vertical;min-height:84px}
-input[type=text]:focus,textarea:focus{border-color:var(--brand);outline:none;box-shadow:0 0 0 4px var(--brand-soft)}
+input[type=text]:focus,input[type=email]:focus,input[type=password]:focus,textarea:focus{border-color:var(--brand);outline:none;box-shadow:0 0 0 4px var(--brand-soft)}
 .seg{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--brand-soft);border-radius:999px;padding:4px;gap:4px}
 .seg button{min-height:40px;padding:0 18px;border:0;background:transparent;border-radius:999px;font-weight:700;color:var(--muted);display:inline-flex;gap:6px;align-items:center;justify-content:center}
 .seg button[aria-selected="true"]{background:var(--card);color:var(--brand);box-shadow:var(--e1)}
@@ -438,6 +438,7 @@ textarea.mono{font:.8rem/1.4 var(--mono);min-height:160px}
 <nav class="btabs" id="btabs" aria-label="Main"></nav>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <div id="overlay"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
 <script>
 
 /* ============ utilities ============ */
@@ -1300,7 +1301,8 @@ function vWelcome() {
       : `<div class="art" style="display:flex;align-items:flex-end;justify-content:center;margin:-4px 0">${packs(pk)}</div><div><h1>Makeup that fits you</h1><p class="muted" style="margin-top:6px">Matched to your skin, your budget and what you already own.</p></div>
       <div class="wlist"><div><span class="i">${ic('user')}</span><span>One-minute profile with an optional selfie check</span></div><div><span class="i">${ic('check')}</span><span>Every pick explains why it suits you</span></div><div><span class="i">${ic('book')}</span><span>Step by step tutorials and daily skincare</span></div></div>
       <div class="stack" style="width:100%"><button class="btn lg block" type="button" data-act="newProfile">Create my profile</button><button class="btn sec block" type="button" data-act="demo">Try the demo profile</button></div>`}
-    <p class="tiny muted">Photos are read in your browser and never uploaded. Data stays on this device.</p></div></div>`;
+    ${sb ? '<button class="btn ghost block" type="button" data-act="authOpen" data-m="in">Sign in or create an account</button>' : ''}
+    <p class="tiny muted">Photos are read in your browser and never uploaded. ${sb ? 'Sign in to sync your profile across devices.' : 'Data stays on this device.'}</p></div></div>`;
 }
 
 /* ============ HOME ============ */
@@ -1504,7 +1506,7 @@ function vProfile() {
   <div class="set"><h3>Your data</h3>
   <div><p class="small muted">Everything is stored on this device only.</p><div class="row"><button class="btn sec sm" type="button" data-act="exportData">Back up</button><button class="btn sec sm" type="button" data-act="importData">Restore</button></div></div>
   <div>${ui.installEvt ? `<button class="btn sm" type="button" data-act="install">Install GlowGuide</button>` : '<p class="small muted">On a phone, open your browser menu and choose Add to Home Screen to install.</p>'}</div></div>
-  <div class="set"><h3>Account</h3><div><div class="row"><button class="btn sec sm" type="button" data-act="logout">${ic('left')} Log out</button><button class="btn sec sm danger" type="button" data-act="deleteAcct">${ic('trash')} Delete account</button></div><p class="small muted">Logging out keeps your data so you can sign back in. Deleting removes it from this device.</p></div></div>
+  <div class="set"><h3>Account</h3><div>${cloudCard()}<div class="row"><button class="btn sec sm" type="button" data-act="logout">${ic('left')} Log out</button><button class="btn sec sm danger" type="button" data-act="deleteAcct">${ic('trash')} Delete account</button></div><p class="small muted">${cloudOn() ? 'Logging out keeps your data safe in your account. Deleting removes it from your account and this device.' : 'Logging out keeps your data so you can sign back in. Deleting removes it from this device.'}</p></div></div>
   <a class="btn sec" href="#principles">${ic('info')} How this app applies HCI principles</a></div></div>`;
 }
 
@@ -1662,6 +1664,140 @@ function bagPicker() {
 const p0 = r => r.p.line;
 
 
+/* ============ cloud sync (Supabase) ============ */
+var SB_URL = 'https://fapnmpwlxfuevflevunn.supabase.co', SB_KEY = 'sb_publishable_ER2rhDKYP6TmXF-klk2wDg_N1-zqBKm';
+var sb = null;
+try { if (window.supabase && window.supabase.createClient) sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } }); } catch (e) { sb = null; }
+var cloud = { user: null, ready: false, timer: null, busy: false, again: false, last: null, state: 'idle', histN: -1 };
+const TABLES = ['bag_items', 'wishlist_items', 'saved_looks', 'tutorial_history', 'routine_log', 'overrides'];
+function cloudOn() { return !!(sb && cloud.user); }
+function cloudQueue() { if (!cloudOn() || !cloud.ready) return; clearTimeout(cloud.timer); cloud.state = 'pending'; cloud.timer = setTimeout(() => pushAll(), 1200); }
+function syncLabel() { return { idle: 'Up to date', pending: 'Saving changes', syncing: 'Syncing', synced: 'Synced ' + (cloud.last ? cloud.last.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''), error: 'Could not sync. Will retry on your next change.' }[cloud.state] || ''; }
+function showSync() { const el = $('#syncState'); if (el) el.textContent = syncLabel(); }
+const must = r => { if (r && r.error) throw r.error; return r; };
+async function syncRows(table, rows, keyCol, uid) {
+  if (rows.length) must(await sb.from(table).upsert(rows));
+  let q = sb.from(table).delete().eq('user_id', uid);
+  if (rows.length) q = q.not(keyCol, 'in', '(' + rows.map(r => '"' + String(r[keyCol]).replace(/"/g, '') + '"').join(',') + ')');
+  must(await q);
+}
+async function pushAll() {
+  if (!cloudOn() || !S.profile) return false;
+  if (cloud.busy) { cloud.again = true; return true; }
+  cloud.busy = true; cloud.state = 'syncing'; showSync();
+  const uid = cloud.user.id; let ok = true;
+  try {
+    const p = S.profile;
+    must(await sb.from('profiles').upsert({ id: uid, name: p.name, undertone: p.under, depth: p.depth, skin: p.skin, finish: p.finish, budget_min: p.budget ? p.budget[0] : null, budget_max: p.budget ? p.budget[1] : null, brands: p.brands || [], avoid: p.sens || [], concerns: p.concerns || [], routine_level: S.level, prefs: S.prefs, updated_at: new Date().toISOString() }));
+    await syncRows('bag_items', [...new Set(S.bag)].map(v => ({ user_id: uid, product_id: v })), 'product_id', uid);
+    await syncRows('wishlist_items', [...new Set(S.wish)].map(v => ({ user_id: uid, product_id: v })), 'product_id', uid);
+    await syncRows('saved_looks', [...new Set(S.favs)].map(v => ({ user_id: uid, look_id: v })), 'look_id', uid);
+    await syncRows('overrides', Object.entries(S.ov || {}).map(([k, v]) => ({ user_id: uid, slot_key: k, product_id: v })), 'slot_key', uid);
+    const rt = Object.entries(S.rt || {}).map(([d, v]) => ({ user_id: uid, day: d, am: v.am || [], pm: v.pm || [], is_full: !!v.full }));
+    if (rt.length) must(await sb.from('routine_log').upsert(rt));
+    if (S.hist.length !== cloud.histN) {
+      must(await sb.from('tutorial_history').delete().eq('user_id', uid));
+      if (S.hist.length) must(await sb.from('tutorial_history').insert(S.hist.map(h => ({ user_id: uid, look_id: h.look, done_at: new Date(h.t || Date.now()).toISOString() }))));
+      cloud.histN = S.hist.length;
+    }
+    cloud.state = 'synced'; cloud.last = new Date();
+  } catch (e) { ok = false; cloud.state = 'error'; try { console.warn('sync failed', e); } catch (x) { } }
+  cloud.busy = false; showSync();
+  if (cloud.again) { cloud.again = false; cloudQueue(); }
+  return ok;
+}
+async function pullAll() {
+  const res = await Promise.all(['profiles'].concat(TABLES).map(t => sb.from(t).select('*')));
+  res.forEach(must);
+  const [pr, bag, wish, looks, hist, rt, ov] = res.map(r => r.data || []);
+  if (!pr.length) return false;
+  const row = pr[0];
+  S.profile = { name: row.name || 'You', under: row.undertone, depth: row.depth, skin: row.skin, finish: row.finish, budget: [row.budget_min == null ? 0 : row.budget_min, row.budget_max == null ? 99999 : row.budget_max], brands: row.brands || [], sens: row.avoid || [], concerns: row.concerns || [] };
+  S.level = row.routine_level || 'basic'; S.prefs = Object.assign({}, DEF_PREFS, row.prefs || {});
+  S.bag = bag.map(r => r.product_id); S.wish = wish.map(r => r.product_id); S.favs = looks.map(r => r.look_id);
+  S.hist = hist.sort((a, b) => new Date(a.done_at) - new Date(b.done_at)).map(r => ({ look: r.look_id, date: new Date(r.done_at).toLocaleDateString('en-IN'), t: +new Date(r.done_at) }));
+  S.rt = {}; rt.forEach(r => { S.rt[r.day] = { am: r.am || [], pm: r.pm || [], full: !!r.is_full }; });
+  S.ov = {}; ov.forEach(r => { S.ov[r.slot_key] = r.product_id; });
+  cloud.histN = S.hist.length; return true;
+}
+async function afterLogin(user, name) {
+  cloud.user = user; cloud.ready = false; cloud.histN = -1;
+  let had = false; try { had = await pullAll(); } catch (e) { cloud.state = 'error'; }
+  S.session = true; ui.menu = false;
+  if (!had && !S.profile) { startOb2(); ui.ob.name = name || ''; }
+  save(); applyPrefs(); cloud.ready = true;
+  if (!had && S.profile) await pushAll();
+  else if (had) { cloud.state = 'synced'; cloud.last = new Date(); }
+}
+const authMsg = m => /invalid login/i.test(m) ? 'Email or password is wrong.' : /already registered|already been registered/i.test(m) ? 'That email already has an account. Try signing in.' : /password/i.test(m) ? 'Password needs at least 6 characters.' : /rate limit|too many/i.test(m) ? 'Too many tries. Wait a minute and try again.' : /confirm/i.test(m) ? 'Confirm your email first, then sign in.' : m;
+function authSheet(mode) {
+  ui.authMode = mode; const up = mode === 'up';
+  openSheet(`<h2>${up ? 'Create your account' : 'Sign in'}</h2><p class="muted" style="margin:6px 0 14px">${up ? 'Your profile, Beauty Bag and routine will sync to your account.' : 'Your saved profile, bag and routine load on this device.'}</p>
+  <form id="authForm" class="stack" novalidate>
+    ${up ? '<div class="field"><label for="aName">Your first name</label><input type="text" id="aName" autocomplete="given-name" placeholder="Riya"></div>' : ''}
+    <div class="field"><label for="aEmail">Email</label><input type="email" id="aEmail" autocomplete="email" placeholder="you@example.com"></div>
+    <div class="field"><label for="aPw">Password</label><input type="password" id="aPw" autocomplete="${up ? 'new-password' : 'current-password'}" placeholder="At least 6 characters"></div>
+    <p id="authErr" class="small" style="color:var(--bad)" role="alert"></p>
+    <button class="btn lg block" type="submit" id="authGo">${up ? 'Create account' : 'Sign in'}</button>
+    <button class="btn ghost block" type="button" data-act="authSwitch" data-m="${up ? 'in' : 'up'}">${up ? 'I already have an account' : 'New here? Create an account'}</button>
+  </form>`);
+  const f = $(up ? '#aName' : '#aEmail'); f && f.focus();
+}
+async function doAuth() {
+  const up = ui.authMode === 'up', v = id => (($(id) || {}).value || '').trim();
+  const email = v('#aEmail'), pw = (($('#aPw') || {}).value || ''), name = v('#aName');
+  const btn = $('#authGo'), err = t => { const e = $('#authErr'); if (e) e.textContent = t; if (btn) { btn.disabled = false; btn.textContent = up ? 'Create account' : 'Sign in'; } };
+  if (!sb) return err('Accounts need an internet connection and are not available here.');
+  if (!/^\S+@\S+\.\S+$/.test(email)) return err('Enter a valid email address.');
+  if (pw.length < 6) return err('Password needs at least 6 characters.');
+  btn.disabled = true; btn.textContent = 'Please wait';
+  try {
+    const r = up ? await sb.auth.signUp({ email, password: pw, options: { data: { name } } }) : await sb.auth.signInWithPassword({ email, password: pw });
+    if (r.error) return err(authMsg(r.error.message));
+    if (!r.data || !r.data.session) return err('Check your email for a confirmation link, then sign in.');
+    const user = r.data.user;
+    closeSheet(false, async () => {
+      await afterLogin(user, name);
+      goReplace(S.profile ? (S.prefs.start || 'home') : 'setup-0');
+      toast(S.profile ? 'Signed in. Your data is loaded.' : 'Account created');
+    });
+  } catch (e) { err('Could not reach the server. Check your connection.'); }
+}
+async function cloudLogout() {
+  ui.menu = false; clearTimer(); clearTimeout(cloud.timer);
+  const ok = await pushAll();
+  try { await sb.auth.signOut(); } catch (e) { }
+  cloud.user = null; cloud.ready = false; cloud.state = 'idle';
+  if (ok) { wipe(); goReplace('welcome'); toast('Logged out. Your data stays in your account.'); }
+  else { S.session = false; S.tut = null; save(); goReplace('welcome'); toast('Logged out. Some recent changes were not synced.'); }
+}
+async function cloudDelete() {
+  const uid = cloud.user.id; clearTimeout(cloud.timer);
+  try { for (const t of TABLES) must(await sb.from(t).delete().eq('user_id', uid)); must(await sb.from('profiles').delete().eq('id', uid)); } catch (e) { toast('Could not delete online data. Check your connection.'); return; }
+  try { await sb.auth.signOut(); } catch (e) { }
+  cloud.user = null; cloud.ready = false; wipe(); goReplace('welcome'); toast('Your data was deleted');
+}
+function cloudCard() {
+  if (!sb) return '';
+  return cloud.user
+    ? `<div class="row between" style="gap:12px;flex-wrap:wrap"><div><b>Signed in</b><div class="small muted">${esc(cloud.user.email || '')}</div></div><span class="pill good" id="syncState">${esc(syncLabel())}</span></div><button class="btn sec sm" type="button" data-act="syncNow">Sync now</button>`
+    : `<p class="small muted">Sign in to keep your profile, bag and routine on every device.</p><button class="btn sm" type="button" data-act="authOpen" data-m="in">Sign in or create account</button>`;
+}
+async function cloudInit() {
+  if (!sb) return;
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data && data.session) {
+      if (S.session) {
+        cloud.user = data.session.user;
+        let had = false; try { had = await pullAll(); } catch (e) { cloud.state = 'error'; }
+        cloud.ready = true; if (had) { save(); applyPrefs(); render(); } else if (S.profile) pushAll();
+      } else { await sb.auth.signOut(); }
+    }
+    sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') { cloud.user = null; cloud.ready = false; } });
+  } catch (e) { }
+}
+
 /* ============ state ============ */
 const KEY = 'glowguide.v3';
 const DEF_PREFS = { theme: 'auto', size: 'md', density: 'normal', motion: 'on', voice: false, start: 'home' };
@@ -1673,7 +1809,7 @@ try {
   if (r) { const o = JSON.parse(r); S = Object.assign(S, o); S.prefs = Object.assign({}, DEF_PREFS, o.prefs || {}); if (old && S.profile) S.session = true; }
 } catch (e) { }
 if (S.profile && !S.profile.concerns) S.profile.concerns = [];
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } cloudQueue(); };
 const inBag = id => S.bag.includes(id);
 const ui = { f: { cat: 'base', finish: null, max: null, sort: 'match', hideOwn: false, stock: false }, more: {}, text: S.draft || '', occ: null, style: null, inten: 2, results: null, img: null, look: null, alt: null, ob: null, analyzing: false, voice: !!S.prefs.voice, hf: false, timer: null, installEvt: null, pid: null, q: '', lookFilter: '', track: '', skType: 'cleanser', day: null, period: null, bagQ: '', bagCat: 'base', bagSheet: false, fsheet: false, menu: false, nav: 0, dialog: null };
 
@@ -1798,7 +1934,7 @@ function seedDemo() {
 }
 const syncText = () => { const el = $('#vibeText'); if (el) { ui.text = el.value; S.draft = ui.text; save(); } };
 function login() { S.session = true; save(); ui.menu = false; goReplace(S.prefs.start || 'home'); }
-function logout() { S.session = false; S.tut = null; ui.menu = false; clearTimer(); save(); goReplace('welcome'); toast('Logged out. Your profile stays saved on this device.'); }
+function logout() { if (cloudOn()) { cloudLogout(); return; } S.session = false; S.tut = null; ui.menu = false; clearTimer(); save(); goReplace('welcome'); toast('Logged out. Your profile stays saved on this device.'); }
 function wipe() { try { localStorage.removeItem(KEY); localStorage.removeItem('glowguide.v2'); } catch (x) { } const pr = S.prefs; S = blank(); S.prefs = pr; ui.ob = null; ui.text = ''; save(); }
 const exportJSON = () => JSON.stringify({ app: 'glowguide', v: 3, profile: S.profile, bag: S.bag, wish: S.wish, favs: S.favs, rt: S.rt, level: S.level, hist: S.hist, prefs: S.prefs });
 function dialog(title, body, actions) { ui.dialog = true; openSheet(`<h2>${title}</h2><div class="stack" style="margin-top:10px">${body}</div><div class="row" style="margin-top:16px">${actions}</div>`); }
@@ -1861,7 +1997,8 @@ document.addEventListener('click', e => {
     },
     doNew() { closeSheet(false, () => { wipe(); startOb2(); go('setup-0'); }); },
     deleteAcct() { dialog('Delete your account?', '<p class="muted">This clears your profile, Beauty Bag, wishlist, saved looks and routine history from this device. It cannot be undone, so export a backup first if you might want it back.</p>', '<button class="btn danger" type="button" data-act="doDelete">Delete everything</button><button class="btn sec" type="button" data-act="closeSheet">Cancel</button>'); },
-    doDelete() { closeSheet(false, () => { wipe(); goReplace('welcome'); toast('Account deleted from this device'); }); },
+    doDelete() { closeSheet(false, () => { if (cloudOn()) { cloudDelete(); return; } wipe(); goReplace('welcome'); toast('Account deleted from this device'); }); },
+    authOpen() { authSheet(d.m || 'in'); }, authSwitch() { authSheet(d.m || 'in'); }, doAuth() { doAuth(); }, syncNow() { pushAll().then(ok => toast(ok ? 'Synced' : 'Could not sync. Check your connection.')); },
     exportData() { openSheet(`<h2>Back up your data</h2><p class="muted" style="margin:8px 0 12px">Copy this text and keep it somewhere safe. Paste it into Restore on any device to bring your profile back.</p><label class="sr" for="exp">Backup text</label><textarea id="exp" class="mono" readonly>${esc(exportJSON())}</textarea><div class="row" style="margin-top:12px"><button class="btn" type="button" data-act="copyData">Copy to clipboard</button><button class="btn sec" type="button" data-act="closeSheet">Done</button></div>`); const x = $('#exp'); x && x.select(); },
     copyData() { const x = $('#exp'); x.select(); try { navigator.clipboard.writeText(x.value).then(() => toast('Backup copied'), () => { document.execCommand('copy'); toast('Backup copied'); }); } catch (er) { try { document.execCommand('copy'); toast('Backup copied'); } catch (e2) { toast('Press Ctrl+C or long-press to copy'); } } },
     importData() { openSheet(`<h2>Restore from backup</h2><p class="muted" style="margin:8px 0 12px">Paste the backup text here. This replaces what is saved on this device.</p><label class="sr" for="imp">Backup text</label><textarea id="imp" class="mono" placeholder="Paste backup text"></textarea><p id="impErr" class="small" style="color:var(--bad);margin-top:6px" role="alert"></p><div class="row" style="margin-top:8px"><button class="btn" type="button" data-act="doImport">Restore</button><button class="btn sec" type="button" data-act="closeSheet">Cancel</button></div>`); },
@@ -1885,6 +2022,7 @@ document.addEventListener('click', e => {
   };
   if (A[a]) { if (t.tagName === 'A') e.preventDefault(); A[a](); }
 });
+document.addEventListener('submit', e => { if (e.target.id === 'authForm') { e.preventDefault(); doAuth(); } });
 document.addEventListener('input', e => {
   const t = e.target; if (!t.dataset.in) return;
   if (t.dataset.in === 'obName') ui.ob.name = t.value; else if (t.dataset.in === 'vibe') { ui.text = t.value; S.draft = t.value; save(); }
@@ -1920,6 +2058,7 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ui.installEvt = e; });
 applyPrefs();
 render();
+cloudInit();
 try { if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { }); } catch (e) { }
 
 </script>
