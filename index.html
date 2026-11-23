@@ -1779,12 +1779,27 @@ async function cloudDelete() {
 }
 function cloudCard() {
   if (!sb) return '';
-  return cloud.user
+  const cat = `<p class="small muted">Product catalogue: ${P.length} products from ${catalogue.source === 'Supabase' ? 'the Supabase database' : 'the built-in list'}.</p>`;
+  return cat + (cloud.user
     ? `<div class="row between" style="gap:12px;flex-wrap:wrap"><div><b>Signed in</b><div class="small muted">${esc(cloud.user.email || '')}</div></div><span class="pill good" id="syncState">${esc(syncLabel())}</span></div><button class="btn sec sm" type="button" data-act="syncNow">Sync now</button>`
-    : `<p class="small muted">Sign in to keep your profile, bag and routine on every device.</p><button class="btn sm" type="button" data-act="authOpen" data-m="in">Sign in or create account</button>`;
+    : `<p class="small muted">Sign in to keep your profile, bag and routine on every device.</p><button class="btn sm" type="button" data-act="authOpen" data-m="in">Sign in or create account</button>`);
+}
+var catalogue = { source: 'built into the app', n: 0 };
+async function loadCatalogue() {
+  if (!sb) return false;
+  try {
+    const r = await sb.from('products').select('id,ord,data').order('ord');
+    if (r.error || !r.data || r.data.length < 100) return false;
+    const rows = r.data.map(x => x.data).filter(x => x && x.id && x.brand && x.cat);
+    if (rows.length < 100) return false;
+    P.splice(0, P.length, ...rows);
+    BRANDS = [...new Set(P.map(p => p.brand))].sort();
+    catalogue = { source: 'Supabase', n: rows.length }; return true;
+  } catch (e) { return false; }
 }
 async function cloudInit() {
   if (!sb) return;
+  if (await loadCatalogue()) render();
   try {
     const { data } = await sb.auth.getSession();
     if (data && data.session) {
